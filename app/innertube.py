@@ -161,13 +161,21 @@ def fetch_channel_search(channel_id: str, query: str, page_token: str | None = N
 
 
 def fetch_community_post(post_id: str) -> dict:
-    return _post("browse", {"browseId": post_id})
+    # Community posts don't have standalone browse pages via their post ID.
+    # Attempt the call anyway; if YouTube rejects it, return empty.
+    try:
+        return _post("browse", {"browseId": post_id})
+    except Exception:
+        return {}
 
 
 def fetch_community_post_comments(post_id: str, page_token: str | None = None) -> dict:
     if page_token:
         return _post("next", {"continuation": page_token})
-    post_data = _post("browse", {"browseId": post_id})
+    try:
+        post_data = _post("browse", {"browseId": post_id})
+    except Exception:
+        return {}
     # Comments continuation lives in engagementPanels (same pattern as video comments)
     for panel in post_data.get("engagementPanels", []):
         pr = panel.get("engagementPanelSectionListRenderer", {})
