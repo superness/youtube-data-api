@@ -148,3 +148,77 @@ def test_playlist_endpoint(client):
         resp = client.get("/playlist?id=PL123", headers=_HEADERS)
     assert resp.status_code == 200
     assert resp.json()["playlist_id"] == "PL123"
+
+
+def test_autocomplete_endpoint(client):
+    with patch("app.main.fetch_autocomplete", return_value=["python tutorial", "python crash course"]):
+        resp = client.get("/autocomplete?q=python", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["query"] == "python"
+    assert len(data["suggestions"]) == 2
+
+
+def test_autocomplete_upstream_error(client):
+    with patch("app.main.fetch_autocomplete", side_effect=Exception("network error")):
+        resp = client.get("/autocomplete?q=python", headers=_HEADERS)
+    assert resp.status_code == 502
+
+
+def test_home_endpoint(client):
+    with patch("app.main.fetch_home", return_value={}), \
+         patch("app.main.parse_home", return_value=[{"video_id": "abc"}]):
+        resp = client.get("/home?region=US", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["region"] == "US"
+    assert len(data["videos"]) == 1
+
+
+def test_video_comments_endpoint(client):
+    mock_comments = {"comments": [{"comment_id": "c1", "text": "great video"}], "next_page_token": None}
+    with patch("app.main.fetch_video_comments", return_value={}), \
+         patch("app.main.parse_comments", return_value=mock_comments):
+        resp = client.get("/video/comments?video_id=abc123", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["video_id"] == "abc123"
+    assert len(data["comments"]) == 1
+
+
+def test_video_streaming_data_endpoint(client):
+    mock_sd = {"expires_in_seconds": "21540", "formats": [{"itag": 22, "quality_label": "720p"}]}
+    with patch("app.main.fetch_video", return_value={}), \
+         patch("app.main.parse_streaming_data", return_value=mock_sd):
+        resp = client.get("/video/streaming-data?video_id=abc123", headers=_HEADERS)
+    assert resp.status_code == 200
+    assert resp.json()["video_id"] == "abc123"
+
+
+def test_video_streaming_data_not_found(client):
+    with patch("app.main.fetch_video", return_value={}), \
+         patch("app.main.parse_streaming_data", return_value={"formats": [], "expires_in_seconds": None}):
+        resp = client.get("/video/streaming-data?video_id=abc123", headers=_HEADERS)
+    assert resp.status_code == 404
+
+
+def test_channel_playlists_endpoint(client):
+    mock_pl = {"playlists": [{"playlist_id": "PL1", "title": "Mix"}], "next_page_token": None}
+    with patch("app.main.fetch_channel_playlists", return_value={}), \
+         patch("app.main.parse_channel_playlists", return_value=mock_pl):
+        resp = client.get("/channel/playlists?id=UCtest", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["channel_id"] == "UCtest"
+    assert len(data["playlists"]) == 1
+
+
+def test_channel_community_endpoint(client):
+    mock_com = {"posts": [{"post_id": "p1", "text": "hello world"}], "next_page_token": None}
+    with patch("app.main.fetch_channel_community", return_value={}), \
+         patch("app.main.parse_channel_community", return_value=mock_com):
+        resp = client.get("/channel/community?id=UCtest", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["channel_id"] == "UCtest"
+    assert len(data["posts"]) == 1

@@ -236,3 +236,120 @@ def parse_playlist(data: dict) -> dict:
 def parse_suggested(data: dict) -> list[dict]:
     vrs = _collect(data.get("contents", {}), "compactVideoRenderer")
     return [r for vr in vrs if (r := _parse_video_renderer(vr))]
+
+
+# ── Home feed ──────────────────────────────────────────────────────────────────
+
+def parse_home(data: dict) -> list[dict]:
+    vrs = _collect(data.get("contents", {}), "videoRenderer")
+    return [r for vr in vrs if (r := _parse_video_renderer(vr))]
+
+
+# ── Video comments ─────────────────────────────────────────────────────────────
+
+def _parse_comment_renderer(cr: dict) -> dict:
+    author_runs = _get(cr, "authorText", "runs") or []
+    thumbs = _get(cr, "authorThumbnail", "thumbnails") or []
+    return {
+        "comment_id": cr.get("commentId"),
+        "author": author_runs[0].get("text") if author_runs else None,
+        "author_channel_id": _get(cr, "authorEndpoint", "browseEndpoint", "browseId"),
+        "author_thumbnail": _best_thumbnail(thumbs),
+        "text": _text(cr.get("contentText")),
+        "likes": _int_from_text(_text(cr.get("voteCount"))),
+        "published_at": _text(cr.get("publishedTimeText")),
+        "reply_count": _int_from_text(_text(cr.get("replyCount"))),
+        "is_pinned": bool(cr.get("pinnedCommentBadge")),
+    }
+
+
+def parse_comments(data: dict) -> dict:
+    comments = []
+    for thread in _collect(data, "commentThreadRenderer"):
+        cr = _get(thread, "comment", "commentRenderer")
+        if cr:
+            comments.append(_parse_comment_renderer(cr))
+    if not comments:
+        comments = [_parse_comment_renderer(cr) for cr in _collect(data, "commentRenderer")]
+
+    cont = None
+    conts = _collect(data, "continuationCommand")
+    if conts:
+        cont = conts[0].get("token")
+    return {"comments": comments, "next_page_token": cont}
+
+
+# ── Streaming data ─────────────────────────────────────────────────────────────
+
+def parse_streaming_data(data: dict) -> dict:
+    sd = data.get("streamingData", {})
+    formats = []
+    for fmt in (sd.get("formats") or []) + (sd.get("adaptiveFormats") or []):
+        formats.append({
+            "itag": fmt.get("itag"),
+            "url": fmt.get("url"),
+            "mime_type": fmt.get("mimeType"),
+            "quality": fmt.get("quality"),
+            "quality_label": fmt.get("qualityLabel"),
+            "width": fmt.get("width"),
+            "height": fmt.get("height"),
+            "bitrate": fmt.get("bitrate"),
+            "fps": fmt.get("fps"),
+            "audio_quality": fmt.get("audioQuality"),
+            "audio_sample_rate": fmt.get("audioSampleRate"),
+            "content_length": fmt.get("contentLength"),
+        })
+    return {
+        "expires_in_seconds": sd.get("expiresInSeconds"),
+        "formats": formats,
+    }
+
+
+# ── Channel playlists ──────────────────────────────────────────────────────────
+
+def parse_channel_playlists(data: dict) -> dict:
+    gprs = _collect(data, "gridPlaylistRenderer")
+    playlists = []
+    for gpr in gprs:
+        pid = gpr.get("playlistId")
+        if not pid:
+            continue
+        thumbs = _get(gpr, "thumbnail", "thumbnails") or []
+        playlists.append({
+            "playlist_id": pid,
+            "title": _text(gpr.get("title")),
+            "video_count_text": _text(gpr.get("videoCountText") or gpr.get("videoCountShortText")),
+            "thumbnail_url": _best_thumbnail(thumbs),
+        })
+
+    cont = None
+    conts = _collect(data, "continuationCommand")
+    if conts:
+        cont = conts[0].get("token")
+    return {"playlists": playlists, "next_page_token": cont}
+
+
+# ── Channel community ──────────────────────────────────────────────────────────
+
+def _parse_post_renderer(pr: dict) -> dict:
+    thumbs = _get(pr, "backstageAttachment", "backstageImageRenderer", "image", "thumbnails") or []
+    return {
+        "post_id": pr.get("postId"),
+        "author": _text(pr.get("authorText")),
+        "author_channel_id": _get(pr, "authorEndpoint", "browseEndpoint", "browseId"),
+        "text": _text(pr.get("contentText")),
+        "published_at": _text(pr.get("publishedTimeText")),
+        "likes": _text(pr.get("voteCount")),
+        "thumbnail_url": _best_thumbnail(thumbs),
+    }
+
+
+def parse_channel_community(data: dict) -> dict:
+    prs = _collect(data, "backstagePostRenderer")
+    posts = [_parse_post_renderer(pr) for pr in prs]
+
+    cont = None
+    conts = _collect(data, "continuationCommand")
+    if conts:
+        cont = conts[0].get("token")
+    return {"posts": posts, "next_page_token": cont}

@@ -14,6 +14,11 @@ from app.innertube import (
     fetch_trending,
     fetch_playlist,
     fetch_suggested,
+    fetch_autocomplete,
+    fetch_home,
+    fetch_video_comments,
+    fetch_channel_playlists,
+    fetch_channel_community,
 )
 from app.parsers import (
     parse_video,
@@ -23,6 +28,11 @@ from app.parsers import (
     parse_trending,
     parse_playlist,
     parse_suggested,
+    parse_home,
+    parse_comments,
+    parse_streaming_data,
+    parse_channel_playlists,
+    parse_channel_community,
 )
 from app.rss import fetch_channel_rss
 from app.transcript import fetch_transcript
@@ -201,4 +211,101 @@ def suggested(video_id: str = Query(..., description="YouTube video ID")):
         raise HTTPException(502, "upstream unavailable")
     result = {"video_id": video_id, "suggested": videos}
     set_cached(_redis, f"suggested:{video_id}", result, ttl=3600)
+    return result
+
+
+@app.get("/autocomplete")
+def autocomplete(
+    q: str = Query(..., description="Partial search query"),
+    lang: str = Query("en", description="BCP-47 language code"),
+):
+    cached = get_cached(_redis, f"autocomplete:{q}:{lang}")
+    if cached:
+        return cached
+    try:
+        suggestions = fetch_autocomplete(q, lang)
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result = {"query": q, "suggestions": suggestions}
+    set_cached(_redis, f"autocomplete:{q}:{lang}", result, ttl=3600)
+    return result
+
+
+@app.get("/home")
+def home(region: str = Query("US", description="ISO 3166-1 alpha-2 country code")):
+    cached = get_cached(_redis, f"home:{region}")
+    if cached:
+        return cached
+    try:
+        videos = parse_home(fetch_home(gl=region))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result = {"region": region, "videos": videos}
+    set_cached(_redis, f"home:{region}", result, ttl=1800)
+    return result
+
+
+@app.get("/video/comments")
+def video_comments(
+    video_id: str = Query(..., description="YouTube video ID"),
+    page_token: str = Query(None, description="Pagination token from previous response"),
+):
+    cache_key = f"comments:{video_id}:{page_token}"
+    cached = get_cached(_redis, cache_key)
+    if cached:
+        return cached
+    try:
+        result = parse_comments(fetch_video_comments(video_id, page_token))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result["video_id"] = video_id
+    set_cached(_redis, cache_key, result, ttl=300)
+    return result
+
+
+@app.get("/video/streaming-data")
+def video_streaming_data(video_id: str = Query(..., description="YouTube video ID")):
+    try:
+        result = parse_streaming_data(fetch_video(video_id))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    if not result.get("formats"):
+        raise HTTPException(404, "no streaming data available")
+    result["video_id"] = video_id
+    return result
+
+
+@app.get("/channel/playlists")
+def channel_playlists(
+    id: str = Query(..., description="Channel ID starting with UC"),
+    page_token: str = Query(None, description="Pagination token from previous response"),
+):
+    cache_key = f"chplaylists:{id}:{page_token}"
+    cached = get_cached(_redis, cache_key)
+    if cached:
+        return cached
+    try:
+        result = parse_channel_playlists(fetch_channel_playlists(id, page_token))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result["channel_id"] = id
+    set_cached(_redis, cache_key, result, ttl=3600)
+    return result
+
+
+@app.get("/channel/community")
+def channel_community(
+    id: str = Query(..., description="Channel ID starting with UC"),
+    page_token: str = Query(None, description="Pagination token from previous response"),
+):
+    cache_key = f"chcommunity:{id}:{page_token}"
+    cached = get_cached(_redis, cache_key)
+    if cached:
+        return cached
+    try:
+        result = parse_channel_community(fetch_channel_community(id, page_token))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result["channel_id"] = id
+    set_cached(_redis, cache_key, result, ttl=1800)
     return result

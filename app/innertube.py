@@ -92,3 +92,54 @@ def fetch_playlist(playlist_id: str, page_token: str | None = None) -> dict:
 
 def fetch_suggested(video_id: str) -> dict:
     return _post("next", {"videoId": video_id})
+
+
+def fetch_autocomplete(query: str, lang: str = "en") -> list[str]:
+    resp = requests.get(
+        "https://suggestqueries.google.com/complete/search",
+        params={"client": "firefox", "q": query, "hl": lang, "ds": "yt"},
+        headers={"Accept-Language": f"{lang};q=0.9,en;q=0.8"},
+        timeout=settings.request_timeout,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list):
+        return [s for s in data[1] if isinstance(s, str)]
+    return []
+
+
+def fetch_home(gl: str = "US") -> dict:
+    return _post("browse", {"browseId": "FEwhat_to_watch"}, gl=gl)
+
+
+def fetch_video_comments(video_id: str, page_token: str | None = None) -> dict:
+    if page_token:
+        return _post("next", {"continuation": page_token})
+    next_data = _post("next", {"videoId": video_id})
+    for panel in next_data.get("engagementPanels", []):
+        pr = panel.get("engagementPanelSectionListRenderer", {})
+        if pr.get("panelIdentifier") == "comment-item-section":
+            for item in (pr.get("content", {})
+                           .get("sectionListRenderer", {})
+                           .get("contents", [])):
+                token = (item.get("continuationItemRenderer", {})
+                             .get("continuationEndpoint", {})
+                             .get("continuationCommand", {})
+                             .get("token"))
+                if token:
+                    return _post("next", {"continuation": token})
+    return {}
+
+
+def fetch_channel_playlists(channel_id: str, page_token: str | None = None) -> dict:
+    payload: dict = {"browseId": channel_id, "params": "EglwbGF5bGlzdHPyBgQKAkIA"}
+    if page_token:
+        payload["continuation"] = page_token
+    return _post("browse", payload)
+
+
+def fetch_channel_community(channel_id: str, page_token: str | None = None) -> dict:
+    payload: dict = {"browseId": channel_id, "params": "Egljb21tdW5pdHnyBgQKAkoA"}
+    if page_token:
+        payload["continuation"] = page_token
+    return _post("browse", payload)
