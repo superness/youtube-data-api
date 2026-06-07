@@ -143,3 +143,42 @@ def fetch_channel_community(channel_id: str, page_token: str | None = None) -> d
     if page_token:
         payload["continuation"] = page_token
     return _post("browse", payload)
+
+
+def _channel_search_params(channel_id: str) -> str:
+    import base64
+    ch = channel_id.encode()
+    inner = b'\x0a' + bytes([len(ch)]) + ch   # field 1 = channel_id string
+    outer = b'\x12' + bytes([len(inner)]) + inner  # field 2 = channel filter
+    return base64.b64encode(outer).decode()
+
+
+def fetch_channel_search(channel_id: str, query: str, page_token: str | None = None) -> dict:
+    payload: dict = {"query": query, "params": _channel_search_params(channel_id)}
+    if page_token:
+        payload["continuation"] = page_token
+    return _post("search", payload)
+
+
+def fetch_community_post(post_id: str) -> dict:
+    return _post("browse", {"browseId": post_id})
+
+
+def fetch_community_post_comments(post_id: str, page_token: str | None = None) -> dict:
+    if page_token:
+        return _post("next", {"continuation": page_token})
+    post_data = _post("browse", {"browseId": post_id})
+    # Comments continuation lives in engagementPanels (same pattern as video comments)
+    for panel in post_data.get("engagementPanels", []):
+        pr = panel.get("engagementPanelSectionListRenderer", {})
+        if pr.get("panelIdentifier") == "comment-item-section":
+            for item in (pr.get("content", {})
+                           .get("sectionListRenderer", {})
+                           .get("contents", [])):
+                token = (item.get("continuationItemRenderer", {})
+                             .get("continuationEndpoint", {})
+                             .get("continuationCommand", {})
+                             .get("token"))
+                if token:
+                    return _post("next", {"continuation": token})
+    return {}

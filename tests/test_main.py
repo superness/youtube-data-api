@@ -222,3 +222,42 @@ def test_channel_community_endpoint(client):
     data = resp.json()
     assert data["channel_id"] == "UCtest"
     assert len(data["posts"]) == 1
+
+
+def test_channel_search_endpoint(client):
+    mock_results = {"results": [{"video_id": "v1", "title": "T"}], "next_page_token": None}
+    with patch("app.main.fetch_channel_search", return_value={}), \
+         patch("app.main.parse_channel_search", return_value=mock_results):
+        resp = client.get("/channel/search?id=UCtest&q=python", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["channel_id"] == "UCtest"
+    assert data["query"] == "python"
+    assert len(data["results"]) == 1
+
+
+def test_community_post_endpoint(client):
+    mock_post = {"post_id": "UgkxABC", "text": "hello", "author": "Creator"}
+    with patch("app.main.fetch_community_post", return_value={}), \
+         patch("app.main.parse_community_post", return_value=mock_post):
+        resp = client.get("/community/post?id=UgkxABC", headers=_HEADERS)
+    assert resp.status_code == 200
+    assert resp.json()["post_id"] == "UgkxABC"
+
+
+def test_community_post_not_found(client):
+    with patch("app.main.fetch_community_post", return_value={}), \
+         patch("app.main.parse_community_post", return_value={}):
+        resp = client.get("/community/post?id=bad", headers=_HEADERS)
+    assert resp.status_code == 404
+
+
+def test_community_post_comments_endpoint(client):
+    mock_comments = {"comments": [{"comment_id": "c1", "text": "nice post"}], "next_page_token": None}
+    with patch("app.main.fetch_community_post_comments", return_value={}), \
+         patch("app.main.parse_community_post_comments", return_value=mock_comments):
+        resp = client.get("/community/post/comments?id=UgkxABC", headers=_HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["post_id"] == "UgkxABC"
+    assert len(data["comments"]) == 1

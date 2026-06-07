@@ -353,3 +353,29 @@ def parse_channel_community(data: dict) -> dict:
     if conts:
         cont = conts[0].get("token")
     return {"posts": posts, "next_page_token": cont}
+
+
+# ── Channel search ─────────────────────────────────────────────────────────────
+
+def parse_channel_search(data: dict) -> dict:
+    vrs = _collect(data.get("contents", {}), "videoRenderer")
+    videos = [r for vr in vrs if (r := _parse_video_renderer(vr))]
+
+    cont = None
+    conts = _collect(data, "continuationCommand")
+    if conts:
+        cont = conts[0].get("token")
+    return {"results": videos, "next_page_token": cont}
+
+
+# ── Community post ─────────────────────────────────────────────────────────────
+
+def parse_community_post(data: dict) -> dict:
+    prs = _collect(data, "backstagePostRenderer")
+    if prs:
+        return _parse_post_renderer(prs[0])
+    return {}
+
+
+def parse_community_post_comments(data: dict) -> dict:
+    return parse_comments(data)

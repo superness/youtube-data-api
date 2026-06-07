@@ -19,6 +19,9 @@ from app.innertube import (
     fetch_video_comments,
     fetch_channel_playlists,
     fetch_channel_community,
+    fetch_channel_search,
+    fetch_community_post,
+    fetch_community_post_comments,
 )
 from app.parsers import (
     parse_video,
@@ -33,6 +36,9 @@ from app.parsers import (
     parse_streaming_data,
     parse_channel_playlists,
     parse_channel_community,
+    parse_channel_search,
+    parse_community_post,
+    parse_community_post_comments,
 )
 from app.rss import fetch_channel_rss
 from app.transcript import fetch_transcript
@@ -308,4 +314,57 @@ def channel_community(
         raise HTTPException(502, "upstream unavailable")
     result["channel_id"] = id
     set_cached(_redis, cache_key, result, ttl=1800)
+    return result
+
+
+@app.get("/channel/search")
+def channel_search(
+    id: str = Query(..., description="Channel ID starting with UC"),
+    q: str = Query(..., description="Search query"),
+    page_token: str = Query(None, description="Pagination token from previous response"),
+):
+    cache_key = hashlib.sha256(f"chsearch:{id}:{q}:{page_token}".encode()).hexdigest()
+    cached = get_cached(_redis, cache_key)
+    if cached:
+        return cached
+    try:
+        result = parse_channel_search(fetch_channel_search(id, q, page_token))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result["channel_id"] = id
+    result["query"] = q
+    set_cached(_redis, cache_key, result, ttl=3600)
+    return result
+
+
+@app.get("/community/post")
+def community_post(id: str = Query(..., description="Community post ID")):
+    cached = get_cached(_redis, f"cpost:{id}")
+    if cached:
+        return cached
+    try:
+        result = parse_community_post(fetch_community_post(id))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    if not result.get("post_id"):
+        raise HTTPException(404, "post not found")
+    set_cached(_redis, f"cpost:{id}", result, ttl=3600)
+    return result
+
+
+@app.get("/community/post/comments")
+def community_post_comments(
+    id: str = Query(..., description="Community post ID"),
+    page_token: str = Query(None, description="Pagination token from previous response"),
+):
+    cache_key = f"cpostcomments:{id}:{page_token}"
+    cached = get_cached(_redis, cache_key)
+    if cached:
+        return cached
+    try:
+        result = parse_community_post_comments(fetch_community_post_comments(id, page_token))
+    except Exception:
+        raise HTTPException(502, "upstream unavailable")
+    result["post_id"] = id
+    set_cached(_redis, cache_key, result, ttl=300)
     return result
