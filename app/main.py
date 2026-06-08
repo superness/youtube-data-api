@@ -6,12 +6,12 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.cache import get_cached, set_cached
+from app.ytdata import fetch_most_popular
 from app.innertube import (
     fetch_video,
     fetch_search,
     fetch_channel,
     fetch_channel_videos_tab,
-    fetch_trending,
     fetch_playlist,
     fetch_suggested,
     fetch_autocomplete,
@@ -28,7 +28,6 @@ from app.parsers import (
     parse_search,
     parse_channel,
     parse_channel_videos,
-    parse_trending,
     parse_playlist,
     parse_suggested,
     parse_home,
@@ -164,8 +163,13 @@ def trending(region: str = Query("US", description="ISO 3166-1 alpha-2 country c
     cached = get_cached(_redis, f"trending:{region}")
     if cached:
         return cached
+    # YouTube retired the InnerTube trending feed (FEtrending) in 2025; use the
+    # official Data API most-popular chart. Keyed + quota'd per project, so it is
+    # not IP-blocked — no residential proxy needed (unlike the scraping paths).
+    if not settings.youtube_api_key:
+        raise HTTPException(503, "trending unavailable: server missing YouTube Data API key")
     try:
-        videos = parse_trending(fetch_trending(gl=region))
+        videos = fetch_most_popular(region=region)
     except Exception:
         raise HTTPException(502, "upstream unavailable")
     result = {"region": region, "videos": videos}

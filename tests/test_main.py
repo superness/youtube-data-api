@@ -104,11 +104,19 @@ def test_search_endpoint(client):
 
 
 def test_trending_endpoint(client):
-    with patch("app.main.fetch_trending", return_value={}), \
-         patch("app.main.parse_trending", return_value=[]):
+    with patch("app.main.settings.youtube_api_key", "test-key"), \
+         patch("app.main.fetch_most_popular", return_value=[_MOCK_VIDEO]):
         resp = client.get("/trending?region=US", headers=_HEADERS)
     assert resp.status_code == 200
-    assert resp.json()["region"] == "US"
+    body = resp.json()
+    assert body["region"] == "US"
+    assert body["videos"][0]["video_id"] == "abc123"
+
+
+def test_trending_missing_key_returns_503(client):
+    with patch("app.main.settings.youtube_api_key", ""):
+        resp = client.get("/trending?region=US", headers=_HEADERS)
+    assert resp.status_code == 503
 
 
 def test_captions_found(client):
